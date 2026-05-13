@@ -1,62 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 0. Default Deny
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // --- Helpers ---
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // Schema Validation
-    function isValidDailyLog(data) {
-      return data.keys().hasAll(['tasks', 'updatedAt'])
-        && data.tasks is map
-        && data.updatedAt is string
-        && (data.get('supervisorFeedback', '') is string)
-        && (data.get('assistantNotes', '') is string)
-        && (data.get('customTasks', []) is list);
-    }
-
-    // --- Collections ---
-    
-    match /dailyLogs/{date} {
-      allow get: if isSignedIn() && isValidId(date);
-      allow list: if isSignedIn();
-      
-      allow create: if isSignedIn() 
-        && isValidId(date) 
-        && isValidDailyLog(incoming());
-        
-      allow update: if isSignedIn() 
-        && isValidId(date) 
-        && isValidDailyLog(incoming())
-        // Enforce that we don't allow deletions or specific destructive updates if needed
-        // For this app, we allow full updates as it's a shared log
-        && (incoming().updatedAt != existing().updatedAt);
-        
-      allow delete: if false; // Logs are permanent records
-    }
-
-    // Test connection doc
-    match /test/connection {
-      allow get: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection, getDocFromServer } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, getDocFromServer, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { 
   CheckCircle2, 
   Circle, 
@@ -41,19 +41,30 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, setErrorMessage?: (msg: string | null) => void) {
+  const message = error instanceof Error ? error.message : String(error);
+  const uid = auth.currentUser?.uid;
+  const isAnon = auth.currentUser?.isAnonymous;
+  
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
-      userId: auth.currentUser?.uid,
+      userId: uid,
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
+      isAnonymous: isAnon,
     },
     operationType,
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  if (setErrorMessage) {
+    const displayMsg = message.includes('permission') 
+      ? `權限不足 (UID: ${uid || '未登入'}, 匿名: ${isAnon ? '是' : '否'})` 
+      : message;
+    setErrorMessage(`儲存失敗: ${displayMsg}`);
+    setTimeout(() => setErrorMessage(null), 8000);
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -120,26 +131,50 @@ export default function App() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [newCustomTaskText, setNewCustomTaskText] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const SUPERVISOR_PASSWORD = 'admin'; 
+  const SUPERVISOR_PASSWORD = import.meta.env.VITE_SUPERVISOR_PASSWORD || 'admin'; 
 
   const logData = allLogs[selectedDate] || { tasks: {}, supervisorFeedback: '', assistantNotes: '', customTasks: [] };
 
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error('Auth error:', error);
+    console.log('Registering onAuthStateChanged...');
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      console.log('Auth changed:', u ? `User: ${u.uid}` : 'No user');
+      if (u) {
+        setUser(u);
+        setErrorMessage(null);
+      } else {
+        console.log('Attempting anonymous sign in...');
+        try {
+          const cred = await signInAnonymously(auth);
+          console.log('Signed in anonymously:', cred.user.uid);
+        } catch (error: any) {
+          console.error('Auth error during silent sign-in:', error);
+          if (error.code === 'auth/operation-not-allowed') {
+            setErrorMessage('匿名登入未啟用。前進 Firebase 專案設定啟用 Anonymous 登入，或點擊下方嘗試 Google 登入。');
+          } else {
+            setErrorMessage('驗證失敗: ' + (error.message || '未知錯誤'));
+          }
+        }
       }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    });
     return () => unsubscribe();
   }, []);
+
+  const handleGoogleSignIn = async () => {
+    const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error('Google Sign In Error:', error);
+      setErrorMessage('Google 登入失敗: ' + error.message);
+    }
+  };
 
   // Validate Connection to Firestore
   useEffect(() => {
@@ -170,7 +205,7 @@ export default function App() {
         setAllLogs(logs);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'dailyLogs');
+        handleFirestoreError(error, OperationType.LIST, 'dailyLogs', setErrorMessage);
       }
     );
 
@@ -178,14 +213,25 @@ export default function App() {
   }, [user]);
 
   const updateDocData = async (newData: any) => {
-    if (!user) return;
+    if (!auth.currentUser) {
+      setErrorMessage('尚未連線，請稍後或使用 Google 登入');
+      return;
+    }
     setIsSaving(true);
+    setErrorMessage(null);
     const path = `dailyLogs/${selectedDate}`;
+    console.log('Writing to path:', path, 'with data:', newData);
     try {
       const docRef = doc(db, 'dailyLogs', selectedDate);
-      await setDoc(docRef, { ...logData, ...newData, updatedAt: new Date().toISOString() }, { merge: true });
+      
+      const finalData = {
+        ...newData,
+        updatedAt: serverTimestamp()
+      };
+      
+      await setDoc(docRef, finalData, { merge: true });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      handleFirestoreError(error, OperationType.WRITE, path, setErrorMessage);
     } finally {
       setIsSaving(false);
     }
@@ -193,7 +239,9 @@ export default function App() {
 
   const toggleTask = (taskId: string) => {
     if (role === 'supervisor') return; 
-    const newTasks = { ...logData.tasks, [taskId]: !logData.tasks[taskId] };
+    const currentTasks = logData.tasks || {};
+    const newTasks = { ...currentTasks, [taskId]: !currentTasks[taskId] };
+    console.log('Toggling task:', taskId, 'New tasks state:', newTasks);
     updateDocData({ tasks: newTasks });
   };
 
@@ -227,9 +275,11 @@ export default function App() {
 
   const handleToggleCustomTask = (taskId: string) => {
     if (role === 'supervisor') return;
-    const updatedCustomTasks = (logData.customTasks || []).map((task: any) => 
+    const currentCustomTasks = logData.customTasks || [];
+    const updatedCustomTasks = currentCustomTasks.map((task: any) => 
       task.id === taskId ? { ...task, completed: !task.completed } : task
     );
+    console.log('Toggling custom task:', taskId);
     updateDocData({ customTasks: updatedCustomTasks });
   };
 
@@ -629,6 +679,34 @@ export default function App() {
             <div className="w-40 border-b border-black mb-2"></div>
             <span className="text-slate-600">主管/檢核人簽名</span>
           </div>
+        </div>
+
+        {/* Auth Status & Error Indicator */}
+        <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2 print:hidden">
+          {!user && (
+            <div className="flex flex-col gap-2">
+              <div className="bg-amber-600 text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg animate-pulse flex items-center gap-2">
+                <Clock className="w-3 h-3" />
+                連線中...
+              </div>
+              <button 
+                onClick={handleGoogleSignIn}
+                className="bg-white text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center gap-2"
+              >
+                <UserCircle className="w-4 h-4 text-blue-600" />
+                使用 Google 登入
+              </button>
+            </div>
+          )}
+          {errorMessage && (
+            <div className="bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-4 max-w-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-medium text-sm">系統訊息</span>
+              </div>
+              <p className="text-xs opacity-90 leading-relaxed">{errorMessage}</p>
+            </div>
+          )}
         </div>
 
         <div className={`fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg transition-opacity duration-300 print:hidden ${isSaving ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
