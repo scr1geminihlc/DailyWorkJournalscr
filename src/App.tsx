@@ -146,16 +146,7 @@ export default function App() {
 
   const logData = allLogs[selectedDate] || { tasks: {}, supervisorFeedback: '', assistantNotes: '', customTasks: [] };
   
-  console.log('Current State:', { 
-    uid: user?.uid, 
-    role, 
-    selectedDate, 
-    hasData: !!allLogs[selectedDate],
-    tasksCount: Object.keys(logData.tasks || {}).length
-  });
-
   useEffect(() => {
-    console.log('Registering onAuthStateChanged...');
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       console.log('Auth changed:', u ? `User: ${u.uid}` : 'No user');
       if (u) {
@@ -234,7 +225,6 @@ export default function App() {
     setIsSaving(true);
     setErrorMessage(null);
     const path = `dailyLogs/${selectedDate}`;
-    console.log('UpdateDocData path:', path, 'data:', newData);
     try {
       const docRef = doc(db, 'dailyLogs', selectedDate);
       const finalData = {
@@ -243,9 +233,7 @@ export default function App() {
       };
       
       await setDoc(docRef, finalData, { merge: true });
-      console.log('UpdateDocData successful');
     } catch (error) {
-      console.error('UpdateDocData failed:', error);
       handleFirestoreError(error, OperationType.WRITE, path, setErrorMessage);
     } finally {
       setIsSaving(false);
@@ -309,14 +297,14 @@ export default function App() {
     // Optimistically update allLogs
     setAllLogs(prev => {
       const currentLog = prev[selectedDate] || {};
-      const currentCustomTasks = (currentLog.customTasks || []).map((t: any) => 
+      const updatedCustomTasks = (currentLog.customTasks || []).map((t: any) => 
         t.id === taskId ? { ...t, completed: !t.completed } : t
       );
       return {
         ...prev,
         [selectedDate]: {
           ...currentLog,
-          customCustomTasks: currentCustomTasks
+          customTasks: updatedCustomTasks
         }
       };
     });
