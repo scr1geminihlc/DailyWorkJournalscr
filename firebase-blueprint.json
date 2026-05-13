@@ -1,0 +1,37 @@
+{
+  "entities": {
+    "DailyLog": {
+      "title": "Daily Log",
+      "description": "Assistant work log for a specific date",
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "object",
+          "description": "Map of task IDs to completion status"
+        },
+        "supervisorFeedback": {
+          "type": "string",
+          "description": "Feedback from the supervisor"
+        },
+        "assistantNotes": {
+          "type": "string",
+          "description": "Notes from the assistant"
+        },
+        "customTasks": {
+          "type": "array",
+          "description": "List of dynamic tasks added by supervisor"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "dailyLogs/{date}": {
+      "schema": "DailyLog",
+      "description": "Collection of daily logs"
+    }
+  }
+}
