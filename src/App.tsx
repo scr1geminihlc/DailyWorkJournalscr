@@ -60,7 +60,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   if (setErrorMessage) {
     const displayMsg = message.includes('permission') 
-      ? `權限不足 (UID: ${uid || '未登入'}, 匿名: ${isAnon ? '是' : '否'})` 
+      ? `權限不足 (UID: ${uid || '未登入'}, 匿名: ${isAnon ? '是' : '否'}, DB: ${db.app.options.projectId}/${(db as any)._databaseId?.database || 'default'})` 
       : message;
     setErrorMessage(`儲存失敗: ${displayMsg}`);
     setTimeout(() => setErrorMessage(null), 8000);
@@ -139,6 +139,14 @@ export default function App() {
   const SUPERVISOR_PASSWORD = import.meta.env.VITE_SUPERVISOR_PASSWORD || 'admin'; 
 
   const logData = allLogs[selectedDate] || { tasks: {}, supervisorFeedback: '', assistantNotes: '', customTasks: [] };
+  
+  console.log('Current State:', { 
+    uid: user?.uid, 
+    role, 
+    selectedDate, 
+    hasData: !!allLogs[selectedDate],
+    tasksCount: Object.keys(logData.tasks || {}).length
+  });
 
   useEffect(() => {
     console.log('Registering onAuthStateChanged...');
@@ -220,17 +228,18 @@ export default function App() {
     setIsSaving(true);
     setErrorMessage(null);
     const path = `dailyLogs/${selectedDate}`;
-    console.log('Writing to path:', path, 'with data:', newData);
+    console.log('UpdateDocData path:', path, 'data:', newData);
     try {
       const docRef = doc(db, 'dailyLogs', selectedDate);
-      
       const finalData = {
         ...newData,
         updatedAt: serverTimestamp()
       };
       
       await setDoc(docRef, finalData, { merge: true });
+      console.log('UpdateDocData successful');
     } catch (error) {
+      console.error('UpdateDocData failed:', error);
       handleFirestoreError(error, OperationType.WRITE, path, setErrorMessage);
     } finally {
       setIsSaving(false);
@@ -238,10 +247,11 @@ export default function App() {
   };
 
   const toggleTask = (taskId: string) => {
+    console.log('toggleTask clicked:', taskId, 'Current role:', role);
     if (role === 'supervisor') return; 
     const currentTasks = logData.tasks || {};
     const newTasks = { ...currentTasks, [taskId]: !currentTasks[taskId] };
-    console.log('Toggling task:', taskId, 'New tasks state:', newTasks);
+    console.log('Setting tasks to:', newTasks);
     updateDocData({ tasks: newTasks });
   };
 
@@ -274,12 +284,13 @@ export default function App() {
   };
 
   const handleToggleCustomTask = (taskId: string) => {
+    console.log('handleToggleCustomTask clicked:', taskId, 'Current role:', role);
     if (role === 'supervisor') return;
     const currentCustomTasks = logData.customTasks || [];
     const updatedCustomTasks = currentCustomTasks.map((task: any) => 
       task.id === taskId ? { ...task, completed: !task.completed } : task
     );
-    console.log('Toggling custom task:', taskId);
+    console.log('Setting custom tasks to:', updatedCustomTasks);
     updateDocData({ customTasks: updatedCustomTasks });
   };
 
