@@ -125,6 +125,12 @@ export default function App() {
   const [role, setRole] = useState<'assistant' | 'supervisor'>('assistant'); 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
+  useEffect(() => {
+    console.log('App initialization checking status...');
+    console.log('Firestore Database:', (db as any)._databaseId?.database || 'default');
+    console.log('Auth Current User:', auth.currentUser?.uid || 'None');
+  }, []);
+
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [allLogs, setAllLogs] = useState<Record<string, any>>({});
@@ -252,6 +258,15 @@ export default function App() {
     const currentTasks = logData.tasks || {};
     const newTasks = { ...currentTasks, [taskId]: !currentTasks[taskId] };
     console.log('Setting tasks to:', newTasks);
+    // Optimistically update allLogs
+    setAllLogs(prev => ({
+      ...prev,
+      [selectedDate]: {
+        ...(prev[selectedDate] || {}),
+        tasks: newTasks
+      }
+    }));
+
     updateDocData({ tasks: newTasks });
   };
 
@@ -291,6 +306,21 @@ export default function App() {
       task.id === taskId ? { ...task, completed: !task.completed } : task
     );
     console.log('Setting custom tasks to:', updatedCustomTasks);
+    // Optimistically update allLogs
+    setAllLogs(prev => {
+      const currentLog = prev[selectedDate] || {};
+      const currentCustomTasks = (currentLog.customTasks || []).map((t: any) => 
+        t.id === taskId ? { ...t, completed: !t.completed } : t
+      );
+      return {
+        ...prev,
+        [selectedDate]: {
+          ...currentLog,
+          customCustomTasks: currentCustomTasks
+        }
+      };
+    });
+
     updateDocData({ customTasks: updatedCustomTasks });
   };
 
