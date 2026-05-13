@@ -147,26 +147,28 @@ export default function App() {
   const logData = allLogs[selectedDate] || { tasks: {}, supervisorFeedback: '', assistantNotes: '', customTasks: [] };
   
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       console.log('Auth changed:', u ? `User: ${u.uid}` : 'No user');
       if (u) {
         setUser(u);
         setErrorMessage(null);
-      } else {
-        console.log('Attempting anonymous sign in...');
-        try {
-          const cred = await signInAnonymously(auth);
-          console.log('Signed in anonymously:', cred.user.uid);
-        } catch (error: any) {
-          console.error('Auth error during silent sign-in:', error);
-          if (error.code === 'auth/operation-not-allowed') {
-            setErrorMessage('匿名登入未啟用。前進 Firebase 專案設定啟用 Anonymous 登入，或點擊下方嘗試 Google 登入。');
-          } else {
-            setErrorMessage('驗證失敗: ' + (error.message || '未知錯誤'));
-          }
-        }
       }
     });
+
+    // Attempt silent sign-in if no user
+    const silentSignIn = async () => {
+      if (!auth.currentUser) {
+        console.log('Attempting anonymous sign in...');
+        try {
+          await signInAnonymously(auth);
+        } catch (error: any) {
+          console.log('Anonymous sign-in failed (likely disabled in console):', error.code);
+          // Don't show error to user yet, as open rules might allow access anyway
+        }
+      }
+    };
+    silentSignIn();
+
     return () => unsubscribe();
   }, []);
 
@@ -196,8 +198,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-
+    // Listen to logs regardless of user status (if rules are open true)
     const colRef = collection(db, 'dailyLogs');
     
     const unsubscribe = onSnapshot(
@@ -210,18 +211,18 @@ export default function App() {
         setAllLogs(logs);
       },
       (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'dailyLogs', setErrorMessage);
+        // Only show error if we really don't have access
+        console.error('Snapshot error:', error);
+        if (error.code === 'permission-denied') {
+          handleFirestoreError(error, OperationType.LIST, 'dailyLogs', setErrorMessage);
+        }
       }
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, []);
 
   const updateDocData = async (newData: any) => {
-    if (!auth.currentUser) {
-      setErrorMessage('尚未連線，請稍後或使用 Google 登入');
-      return;
-    }
     setIsSaving(true);
     setErrorMessage(null);
     const path = `dailyLogs/${selectedDate}`;
@@ -234,6 +235,7 @@ export default function App() {
       
       await setDoc(docRef, finalData, { merge: true });
     } catch (error) {
+      console.error('UpdateDocData error:', error);
       handleFirestoreError(error, OperationType.WRITE, path, setErrorMessage);
     } finally {
       setIsSaving(false);
@@ -340,11 +342,14 @@ export default function App() {
       
       <nav className="bg-white border-b shadow-sm sticky top-0 z-10 print:hidden">
         <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-2 rounded-lg">
               <Clock className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-slate-800">楊副校長室 - 專任助理工作日誌</h1>
+            <div>
+              <h1 className="text-xl font-bold text-slate-800 leading-none">楊副校長室 - 專任助理工作日誌</h1>
+              <span className="text-[10px] text-slate-400">v1.0.5</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-4 w-full sm:w-auto">
