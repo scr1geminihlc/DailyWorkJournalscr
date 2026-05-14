@@ -155,20 +155,6 @@ export default function App() {
       }
     });
 
-    // Attempt silent sign-in if no user
-    const silentSignIn = async () => {
-      if (!auth.currentUser) {
-        console.log('Attempting anonymous sign in...');
-        try {
-          await signInAnonymously(auth);
-        } catch (error: any) {
-          console.log('Anonymous sign-in failed (likely disabled in console):', error.code);
-          // Don't show error to user yet, as open rules might allow access anyway
-        }
-      }
-    };
-    silentSignIn();
-
     return () => unsubscribe();
   }, []);
 
@@ -715,22 +701,16 @@ export default function App() {
           </div>
         </div>
 
-        {/* Auth Status & Error Indicator */}
+        {/* Status Indicator */}
         <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2 print:hidden">
           {!user && (
-            <div className="flex flex-col gap-2">
-              <div className="bg-amber-600 text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg animate-pulse flex items-center gap-2">
-                <Clock className="w-3 h-3" />
-                連線中...
-              </div>
-              <button 
-                onClick={handleGoogleSignIn}
-                className="bg-white text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center gap-2"
-              >
-                <UserCircle className="w-4 h-4 text-blue-600" />
-                使用 Google 登入
-              </button>
-            </div>
+            <button 
+              onClick={handleGoogleSignIn}
+              className="bg-white text-slate-700 px-4 py-2 rounded-xl text-sm font-bold shadow-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center gap-2"
+            >
+              <UserCircle className="w-4 h-4 text-blue-600" />
+              使用 Google 登入 (選用)
+            </button>
           )}
           {errorMessage && (
             <div className="bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-4 max-w-xs">
