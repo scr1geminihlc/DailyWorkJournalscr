@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection, getDocFromServer, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, setDoc, onSnapshot, collection, getDocFromServer, serverTimestamp } from 'firebase/firestore';
 import { 
   CheckCircle2, 
   Circle, 
@@ -134,6 +134,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [allLogs, setAllLogs] = useState<Record<string, any>>({});
+  const [isDataLoading, setIsDataLoading] = useState(true);
   
   const [isSaving, setIsSaving] = useState(false);
   const [newCustomTaskText, setNewCustomTaskText] = useState('');
@@ -195,10 +196,12 @@ export default function App() {
           logs[doc.id] = doc.data();
         });
         setAllLogs(logs);
+        setIsDataLoading(false);
       },
       (error) => {
         // Only show error if we really don't have access
         console.error('Snapshot error:', error);
+        setIsDataLoading(false);
         if (error.code === 'permission-denied') {
           handleFirestoreError(error, OperationType.LIST, 'dailyLogs', setErrorMessage);
         }
@@ -334,7 +337,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800 leading-none">楊副校長室 - 專任助理工作日誌</h1>
-              <span className="text-[10px] text-slate-400">v1.0.5</span>
+              <span className="text-[10px] text-slate-400">v1.0.6</span>
             </div>
           </div>
 
@@ -703,6 +706,12 @@ export default function App() {
 
         {/* Status Indicator */}
         <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2 print:hidden">
+          {isDataLoading && (
+            <div className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg animate-pulse flex items-center gap-2">
+              <Clock className="w-3 h-3" />
+              資料讀取中...
+            </div>
+          )}
           {!user && (
             <button 
               onClick={handleGoogleSignIn}
